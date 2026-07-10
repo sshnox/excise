@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>excise — remove C2PA & metadata from images</title>
+<meta name="description" content="Strip C2PA provenance manifests, EXIF and XMP metadata from images. Runs entirely in your browser — images never leave your device." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#EAEEF4;
+    --surface:#FFFFFF;
+    --surface-2:#F4F7FB;
+    --ink:#111621;
+    --muted:#5C6675;
+    --faint:#8A93A2;
+    --line:#D7DEE8;
+    --line-strong:#C3CCD9;
+    --accent:#0B7A75;
+    --accent-hi:#0E8F88;
+    --accent-dim:#0B7A7515;
+    --detect:#C07310;
+    --detect-dim:#C0731016;
+    --ok:#2E9E5B;
+    --radius:12px;
+    --radius-sm:8px;
+    --shadow:0 1px 2px rgba(17,22,33,.04), 0 8px 24px rgba(17,22,33,.06);
+    --shadow-lg:0 2px 4px rgba(17,22,33,.05), 0 20px 48px rgba(17,22,33,.10);
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --display:'Space Grotesk',system-ui,sans-serif;
+    --body:'Inter',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    font-family:var(--body);
+    color:var(--ink);
+    background:
+      radial-gradient(1200px 600px at 80% -10%, #DFE7F1 0%, transparent 60%),
+      var(--bg);
+    min-height:100vh;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:0 20px}
+
+  /* Header */
+  header{padding:36px 0 8px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .brand{display:flex;align-items:baseline;gap:12px}
+  .wordmark{
+    font-family:var(--mono);font-weight:700;font-size:26px;letter-spacing:-.5px;
+    color:var(--ink);position:relative;
+  }
+  .wordmark .cursor{color:var(--accent)}
+  .wordmark::after{content:"";position:absolute;left:0;bottom:-4px;width:100%;height:2px;
+    background:linear-gradient(90deg,var(--accent) 0 34%, transparent 34%);opacity:.55}
+  .tagpill{font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line-strong);
+    padding:3px 8px;border-radius:100px;background:var(--surface);white-space:nowrap}
+  .gh{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;font-weight:500;color:var(--muted);
+    text-decoration:none;border:1px solid var(--line-strong);padding:7px 12px;border-radius:var(--radius-sm);
+    background:var(--surface);transition:.15s}
+  .gh:hover{color:var(--ink);border-color:var(--faint);box-shadow:var(--shadow)}
+  .gh svg{width:16px;height:16px}
+
+  .lede{margin:26px 0 6px;max-width:620px}
+  .lede h1{font-family:var(--display);font-weight:600;font-size:clamp(26px,4.4vw,38px);
+    line-height:1.12;letter-spacing:-.8px;margin-bottom:12px}
+  .lede h1 em{font-style:normal;color:var(--accent);position:relative;white-space:nowrap}
+  .lede p{font-size:15.5px;color:var(--muted);max-width:560px}
+  .lede .local{display:inline-flex;align-items:center;gap:6px;color:var(--ink);font-weight:500;
+    font-size:13px;margin-top:14px;background:var(--accent-dim);border:1px solid var(--accent);
+    color:var(--accent);padding:5px 11px;border-radius:100px}
+  .lede .local::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok);
+    box-shadow:0 0 0 3px #2E9E5B22}
+
+  /* Dropzone */
+  .drop{
+    margin:26px 0 18px;border:1.5px dashed var(--line-strong);border-radius:var(--radius);
+    background:
+      linear-gradient(var(--surface),var(--surface)) padding-box,
+      repeating-linear-gradient(0deg,transparent,transparent 23px,#00000006 23px,#00000006 24px),
+      repeating-linear-gradient(90deg,transparent,transparent 23px,#00000006 23px,#00000006 24px);
+    padding:44px 24px;text-align:center;cursor:pointer;transition:.18s;position:relative;
+  }
+  .drop:hover{border-color:var(--accent);background-color:var(--surface-2)}
+  .drop.drag{border-color:var(--accent);border-style:solid;background:var(--accent-dim);
+    box-shadow:var(--shadow-lg);transform:translateY(-1px)}
+  .drop:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-dim)}
+  .drop .ico{width:46px;height:46px;margin:0 auto 14px;color:var(--accent);
+    display:grid;place-items:center;background:var(--accent-dim);border-radius:12px}
+  .drop .ico svg{width:24px;height:24px}
+  .drop h2{font-family:var(--display);font-weight:600;font-size:19px;margin-bottom:5px;letter-spacing:-.3px}
+  .drop p{font-size:13.5px;color:var(--muted)}
+  .drop .fmts{margin-top:12px;font-family:var(--mono);font-size:11.5px;color:var(--faint);letter-spacing:.2px}
+  .drop.drag *{pointer-events:none}
+
+  /* Options */
+  .opts{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 20px;align-items:center}
+  .opt{display:inline-flex;align-items:center;gap:9px;font-size:13.5px;color:var(--ink);
+    background:var(--surface);border:1px solid var(--line);padding:9px 13px;border-radius:var(--radius-sm);
+    cursor:pointer;user-select:none;transition:.15s}
+  .opt:hover{border-color:var(--line-strong)}
+  .opt input{position:absolute;opacity:0;width:0;height:0}
+  .box{width:17px;height:17px;border-radius:5px;border:1.6px solid var(--line-strong);
+    display:grid;place-items:center;transition:.15s;flex-shrink:0}
+  .opt input:checked + .box{background:var(--accent);border-color:var(--accent)}
+  .box svg{width:11px;height:11px;color:#fff;opacity:0;transition:.15s}
+  .opt input:checked + .box svg{opacity:1}
+  .opt input:focus-visible + .box{box-shadow:0 0 0 3px var(--accent-dim)}
+  .opt .sub{color:var(--faint);font-size:12px}
+  .spacer{flex:1}
+  .btn-clear{font-size:13px;color:var(--muted);background:none;border:none;cursor:pointer;
+    font-family:var(--body);padding:8px;border-radius:6px;transition:.15s}
+  .btn-clear:hover{color:var(--detect)}
+
+  /* File list */
+  .list{display:flex;flex-direction:column;gap:14px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);overflow:hidden;animation:rise .35s cubic-bezier(.2,.7,.3,1)}
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .card-top{display:flex;gap:15px;padding:15px}
+  .thumb{width:64px;height:64px;border-radius:9px;object-fit:cover;background:var(--surface-2);
+    border:1px solid var(--line);flex-shrink:0}
+  .meta{flex:1;min-width:0}
+  .fname{font-weight:600;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fsub{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:3px;display:flex;
+    gap:10px;flex-wrap:wrap}
+  .fsub .fmt{color:var(--ink);text-transform:uppercase}
+  .status{margin-left:auto;align-self:flex-start;font-size:12px;font-weight:600;font-family:var(--mono);
+    padding:4px 9px;border-radius:100px;white-space:nowrap}
+  .status.detected{color:var(--detect);background:var(--detect-dim)}
+  .status.clean{color:var(--ok);background:#2E9E5B14}
+  .status.done{color:#fff;background:var(--ok)}
+  .status.err{color:#C0392B;background:#C0392B14}
+
+  /* Byte map */
+  .map{padding:0 15px 15px}
+  .map-label{font-family:var(--mono);font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;
+    color:var(--faint);margin-bottom:7px;display:flex;justify-content:space-between}
+  .bar{display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--line);
+    background:var(--surface-2)}
+  .seg{position:relative;transition:flex-grow .5s cubic-bezier(.4,0,.2,1),opacity .4s,width .5s;
+    min-width:3px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .seg.data{background:repeating-linear-gradient(45deg,#E3E9F1,#E3E9F1 6px,#DCE3ED 6px,#DCE3ED 12px);flex-grow:20}
+  .seg.c2pa{background:var(--detect)}
+  .seg.exif{background:#7C8698}
+  .seg.xmp{background:#A0788F}
+  .seg .lab{font-family:var(--mono);font-size:9.5px;font-weight:700;color:#fff;letter-spacing:.3px;
+    padding:0 4px;white-space:nowrap}
+  .seg.data .lab{color:var(--muted)}
+  .seg.removing{flex-grow:0 !important;opacity:0;min-width:0}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:9px;font-size:11.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px}
+  .dot{width:9px;height:9px;border-radius:2px}
+  .dot.c2pa{background:var(--detect)}.dot.exif{background:#7C8698}.dot.xmp{background:#A0788F}
+  .dot.data{background:#DCE3ED}
+
+  /* Card actions */
+  .card-act{display:flex;align-items:center;gap:10px;padding:13px 15px;border-top:1px solid var(--line);
+    background:var(--surface-2)}
+  .result-note{font-size:12.5px;color:var(--muted);font-family:var(--mono)}
+  .result-note b{color:var(--ok);font-weight:700}
+  .card-act .grow{flex:1}
+  .btn{font-family:var(--body);font-weight:600;font-size:13.5px;border:none;border-radius:var(--radius-sm);
+    padding:9px 15px;cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:7px}
+  .btn svg{width:15px;height:15px}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.primary:hover{background:var(--accent-hi);box-shadow:var(--shadow)}
+  .btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line-strong)}
+  .btn.ghost:hover{border-color:var(--faint)}
+  .btn:focus-visible{outline:none;box-shadow:0 0 0 4px var(--accent-dim)}
+  .btn:disabled{opacity:.5;cursor:default}
+
+  /* Global action bar */
+  .globalbar{display:flex;gap:12px;align-items:center;margin:20px 0 8px;flex-wrap:wrap}
+  .count{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+
+  /* Footer / about */
+  footer{margin:48px 0 40px;border-top:1px solid var(--line);padding-top:26px}
+  .about{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+  .about h3{font-family:var(--display);font-size:14px;font-weight:600;margin-bottom:8px;letter-spacing:-.2px}
+  .about p{font-size:13px;color:var(--muted);margin-bottom:9px}
+  .about code{font-family:var(--mono);font-size:12px;background:var(--surface);padding:1px 5px;
+    border-radius:4px;border:1px solid var(--line)}
+  .foot-bottom{margin-top:24px;display:flex;justify-content:space-between;align-items:center;
+    flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--faint);font-family:var(--mono)}
+  .foot-bottom a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line-strong)}
+  .foot-bottom a:hover{color:var(--accent)}
+
+  @media (max-width:600px){
+    .about{grid-template-columns:1fr;gap:18px}
+    .tagpill{display:none}
+    .card-act{flex-wrap:wrap}
+    .lede h1{font-size:27px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important;transition:none !important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="topbar">
+      <div class="brand">
+        <span class="wordmark">excise<span class="cursor">_</span></span>
+        <span class="tagpill">client-side · no upload</span>
+      </div>
+      <a class="gh" id="ghLink" href="#" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        Source
+      </a>
+    </div>
+
+    <div class="lede">
+      <h1>Strip <em>C2PA</em> provenance &amp; hidden metadata from your images.</h1>
+      <p>Drop an image to remove its C2PA manifest, EXIF, and XMP data. Everything runs locally in your browser — your files are never uploaded anywhere.</p>
+      <span class="local">Runs 100% on your device</span>
+    </div>
+  </header>
+
+  <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose images or drag and drop">
+    <div class="ico">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v13"/></svg>
+    </div>
+    <h2>Drop images here</h2>
+    <p>or click to choose files — you can add several at once</p>
+    <div class="fmts">JPEG · PNG (lossless) · WEBP · others (re-encode)</div>
+    <input type="file" id="file" accept="image/*" multiple hidden />
+  </div>
+
+  <div class="opts" id="opts" hidden>
+    <label class="opt">
+      <input type="checkbox" id="optExif" />
+      <span class="box"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.2l2.2 2.2 4.8-5"/></svg></span>
+      Also remove EXIF <span class="sub">location, camera, timestamps</span>
+    </label>
+    <label class="opt">
+      <input type="checkbox" id="optXmp" />
+      <span class="box"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.2l2.2 2.2 4.8-5"/></svg></span>
+      Also remove XMP <span class="sub">editing history, tags</span>
+    </label>
+    <span class="spacer"></span>
+    <button class="btn-clear" id="clearAll">Clear all</button>
+  </div>
+
+  <div class="globalbar" id="globalbar" hidden>
+    <button class="btn primary" id="stripAll">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+      Strip metadata from all
+    </button>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="list" id="list"></div>
+
+  <footer>
+    <div class="about">
+      <div>
+        <h3>What is C2PA?</h3>
+        <p>C2PA (Content Credentials) is a provenance standard that embeds a signed <code>manifest</code> inside an image — recording how it was created and edited, including whether AI was involved. Many camera apps and AI image tools now attach it automatically.</p>
+        <p>The manifest lives in <code>APP11 / JUMBF</code> segments in JPEGs and <code>caBX</code> chunks in PNGs. excise finds and removes exactly those, leaving the pixels untouched.</p>
+      </div>
+      <div>
+        <h3>How it works</h3>
+        <p>For JPEG and PNG, excise edits the file structure directly and drops only the metadata segments — <b style="color:var(--ink)">no re-compression, no quality loss</b>. Other formats fall back to a canvas re-encode, which may recompress.</p>
+        <p>Because it's all client-side, you can save this page and use it offline. Nothing is logged, stored, or sent.</p>
+        <p style="font-size:12px;color:var(--faint)">Use responsibly — stripping provenance is great for removing location and device data before sharing, but respect authenticity where it matters.</p>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>excise · MIT licensed · runs in your browser</span>
+      <span><a id="ghLink2" href="#" target="_blank" rel="noopener">View on GitHub →</a></span>
+    </div>
+  </footer>
+</div>
+
+<script>
+/* ============================================================
+   excise — C2PA / EXIF / XMP metadata remover (client-side)
+   No dependencies. All parsing done on raw bytes in-browser.
+   ============================================================ */
+
+// ---- CONFIG: set your repo URL here ----
+const REPO_URL = "https://github.com/your-username/excise";
+document.getElementById('ghLink').href = REPO_URL;
+document.getElementById('ghLink2').href = REPO_URL;
+
+// ---------- byte helpers ----------
+const ascii = (b, s, n) => { let o=''; for (let k=0;k<n && s+k<b.length;k++) o+=String.fromCharCode(b[s+k]); return o; };
+function concat(chunks){ let t=0; for(const c of chunks) t+=c.length; const o=new Uint8Array(t); let off=0; for(const c of chunks){ o.set(c,off); off+=c.length; } return o; }
+function fmtBytes(n){ if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(2)+' MB'; }
+
+function sniff(b){
+  if(b[0]===0xFF && b[1]===0xD8) return 'jpeg';
+  if(b[0]===0x89 && b[1]===0x50 && b[2]===0x4E && b[3]===0x47) return 'png';
+  if(ascii(b,0,4)==='RIFF' && ascii(b,8,4)==='WEBP') return 'webp';
+  if(ascii(b,4,4)==='ftyp') return 'heif';
+  if(b[0]===0x47 && b[1]===0x49 && b[2]===0x46) return 'gif';
+  return 'unknown';
+}
+
+// ---------- JPEG ----------
+function analyzeJPEG(b, opts, dry){
+  if(b[0]!==0xFF || b[1]!==0xD8) throw new Error('Not a valid JPEG');
+  const keep=[b.subarray(0,2)];
+  const detected=[]; const removed=[];
+  let i=2; const n=b.length;
+  while(i<n){
+    if(b[i]!==0xFF){ keep.push(b.subarray(i,n)); break; }
+    let m=b[i+1];
+    while(m===0xFF && i+1<n){ i++; m=b[i+1]; }
+    if(m===0xDA){ keep.push(b.subarray(i,n)); break; }        // SOS -> copy scan to end
+    if(m===0xD9){ keep.push(b.subarray(i,i+2)); i+=2; continue; } // EOI
+    if((m>=0xD0 && m<=0xD7) || m===0x01){ keep.push(b.subarray(i,i+2)); i+=2; continue; } // standalone
+    const len=(b[i+2]<<8)|b[i+3];
+    const ds=i+4, end=i+2+len;
+    let kind=null;
+    if(m===0xEB){ kind='c2pa'; }                               // APP11 = JUMBF/C2PA
+    else if(m===0xE1){
+      if(ascii(b,ds,4)==='Exif') kind='exif';
+      else if(ascii(b,ds,29).indexOf('adobe.com/xap')>-1 || ascii(b,ds,40).indexOf('adobe.com/xmp')>-1) kind='xmp';
+    }
+    if(kind){
+      detected.push({kind, bytes:end-i});
+      const rm = kind==='c2pa' || (kind==='exif'&&opts.exif) || (kind==='xmp'&&opts.xmp);
+      if(rm){ removed.push({kind, bytes:end-i}); if(!dry){ i=end; continue; } }
+    }
+    if(!dry) keep.push(b.subarray(i,end));
+    i=end;
+  }
+  return { detected, removed, out: dry?null:concat(keep) };
+}
+
+// ---------- PNG ----------
+function readKeyword(b, s, len){ let o=''; for(let k=0;k<len;k++){ const c=b[s+k]; if(c===0) break; o+=String.fromCharCode(c);} return o; }
+function analyzePNG(b, opts, dry){
+  const sig=[137,80,78,71,13,10,26,10];
+  for(let k=0;k<8;k++) if(b[k]!==sig[k]) throw new Error('Not a valid PNG');
+  const keep=[b.subarray(0,8)];
+  const detected=[]; const removed=[];
+  let i=8;
+  while(i<b.length){
+    const len=((b[i]<<24)|(b[i+1]<<16)|(b[i+2]<<8)|b[i+3])>>>0;
+    const type=ascii(b,i+4,4);
+    const end=i+12+len;
+    let kind=null;
+    if(type==='caBX') kind='c2pa';
+    else if(type==='eXIf') kind='exif';
+    else if(type==='iTXt'||type==='tEXt'||type==='zTXt'){
+      const kw=readKeyword(b,i+8,len).toLowerCase();
+      if(/c2pa|contentcred|content credential/.test(kw)) kind='c2pa';
+      else if(/xmp/.test(kw)) kind='xmp';
+      else if(/exif/.test(kw)) kind='exif';
+    }
+    if(kind){
+      detected.push({kind, bytes:end-i});
+      const rm = kind==='c2pa' || (kind==='exif'&&opts.exif) || (kind==='xmp'&&opts.xmp);
+      if(rm){ removed.push({kind, bytes:end-i}); if(!dry){ if(type==='IEND') break; i=end; continue; } }
+    }
+    if(!dry) keep.push(b.subarray(i,end));
+    if(type==='IEND') break;
+    i=end;
+  }
+  return { detected, removed, out: dry?null:concat(keep) };
+}
+
+// ---------- fallback: canvas re-encode (strips everything, may recompress) ----------
+function reencode(file, mime){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas');
+      c.width=img.naturalWidth; c.height=img.naturalHeight;
+      c.getContext('2d').drawImage(img,0,0);
+      c.toBlob(blob=>{ URL.revokeObjectURL(url); blob?res(blob):rej(new Error('Re-encode failed')); },
+        mime==='image/webp'?'image/webp':'image/png', 0.95);
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('Could not decode image')); };
+    img.src=url;
+  });
+}
+
+// ---------- dispatcher ----------
+function analyze(bytes, fmt, opts, dry){
+  if(fmt==='jpeg') return analyzeJPEG(bytes, opts, dry);
+  if(fmt==='png')  return analyzePNG(bytes, opts, dry);
+  return { detected:[], removed:[], out:null, unsupported:true };
+}
+
+// ============================================================
+//  UI STATE
+// ============================================================
+const state=[]; // {id,file,name,fmt,bytes,size,detected,mime}
+let idc=0;
+
+const $=s=>document.querySelector(s);
+const drop=$('#drop'), fileInput=$('#file'), listEl=$('#list');
+const optsBar=$('#opts'), globalbar=$('#globalbar'), countEl=$('#count');
+const optExif=$('#optExif'), optXmp=$('#optXmp');
+
+const MIME={jpeg:'image/jpeg',png:'image/png',webp:'image/webp',heif:'image/heif',gif:'image/gif'};
+const KLAB={c2pa:'C2PA',exif:'EXIF',xmp:'XMP'};
+
+// ---- drop / input wiring ----
+drop.addEventListener('click',()=>fileInput.click());
+drop.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fileInput.click(); }});
+fileInput.addEventListener('change',e=>{ addFiles(e.target.files); fileInput.value=''; });
+;['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
+;['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
+drop.addEventListener('drop',e=>{ if(e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files); });
+
+$('#clearAll').addEventListener('click',()=>{ state.length=0; render(); });
+$('#stripAll').addEventListener('click',()=>{ state.forEach(f=>strip(f.id)); });
+[optExif,optXmp].forEach(o=>o.addEventListener('change',render));
+
+async function addFiles(files){
+  for(const file of files){
+    if(!file.type.startsWith('image/') && !/\.(jpe?g|png|webp|gif|avif|heic|heif)$/i.test(file.name)) continue;
+    const buf=new Uint8Array(await file.arrayBuffer());
+    const fmt=sniff(buf);
+    const item={ id:++idc, file, name:file.name, fmt, bytes:buf, size:buf.length,
+                 mime:MIME[fmt]||file.type||'image/png', detected:[], unsupported:false, done:false };
+    try{
+      const a=analyze(buf,fmt,{exif:true,xmp:true},true);
+      item.detected=a.detected; item.unsupported=!!a.unsupported;
+    }catch(err){ item.detected=[]; item.error=err.message; }
+    state.push(item);
+  }
+  render();
+}
+
+// ---- render ----
+function render(){
+  const has=state.length>0;
+  optsBar.hidden=!has; globalbar.hidden=!has;
+  countEl.textContent = has ? `${state.length} file${state.length>1?'s':''} loaded` : '';
+  listEl.innerHTML='';
+  for(const f of state) listEl.appendChild(cardFor(f));
+}
+
+function segmentsFor(f){
+  // build byte-map segments: metadata blocks + remaining "image data"
+  const metaTotal=f.detected.reduce((s,d)=>s+d.bytes,0);
+  const dataBytes=Math.max(f.size-metaTotal,1);
+  const segs=[{kind:'data',bytes:dataBytes}];
+  for(const d of f.detected) segs.push(d);
+  return segs;
+}
+
+function willRemove(f){
+  return f.detected.filter(d=>
+    d.kind==='c2pa' || (d.kind==='exif'&&optExif.checked) || (d.kind==='xmp'&&optXmp.checked));
+}
+
+function cardFor(f){
+  const card=document.createElement('div'); card.className='card'; card.dataset.id=f.id;
+  const hasC2PA=f.detected.some(d=>d.kind==='c2pa');
+  const anyMeta=f.detected.length>0;
+
+  // status
+  let statusHTML;
+  if(f.error){ statusHTML=`<span class="status err">error</span>`; }
+  else if(f.done){ statusHTML=`<span class="status done">✓ cleaned</span>`; }
+  else if(hasC2PA){ statusHTML=`<span class="status detected">C2PA found</span>`; }
+  else if(anyMeta){ statusHTML=`<span class="status detected">metadata found</span>`; }
+  else if(f.unsupported){ statusHTML=`<span class="status detected">re-encode</span>`; }
+  else { statusHTML=`<span class="status clean">already clean</span>`; }
+
+  const thumbURL=URL.createObjectURL(f.file);
+
+  // detail line
+  const detailBits=[`<span class="fmt">${f.fmt}</span>`, fmtBytes(f.size)];
+  if(anyMeta) detailBits.push(f.detected.map(d=>`${KLAB[d.kind]} ${fmtBytes(d.bytes)}`).join(' · '));
+
+  card.innerHTML=`
+    <div class="card-top">
+      <img class="thumb" src="${thumbURL}" alt="" onload="URL.revokeObjectURL(this.src)"/>
+      <div class="meta">
+        <div class="fname">${escapeHtml(f.name)}</div>
+        <div class="fsub">${detailBits.join('<span>·</span>')}</div>
+      </div>
+      ${statusHTML}
+    </div>`;
+
+  // byte map (only if there is metadata to show)
+  if(anyMeta){
+    const segs=segmentsFor(f);
+    const map=document.createElement('div'); map.className='map';
+    const bar=segs.map(s=>{
+      const lab = s.kind==='data' ? 'image data' : KLAB[s.kind];
+      const grow = s.kind==='data' ? 24 : Math.max(1, Math.round(s.bytes/f.size*40));
+      return `<div class="seg ${s.kind}" data-kind="${s.kind}" style="flex-grow:${grow}">
+                <span class="lab">${lab}</span></div>`;
+    }).join('');
+    const legendKinds=[...new Set(f.detected.map(d=>d.kind))];
+    const legend = [`<span><i class="dot data"></i>image data (untouched)</span>`]
+      .concat(legendKinds.map(k=>`<span><i class="dot ${k}"></i>${KLAB[k]}</span>`)).join('');
+    map.innerHTML=`
+      <div class="map-label"><span>file structure</span><span>${fmtBytes(f.size)}</span></div>
+      <div class="bar">${bar}</div>
+      <div class="legend">${legend}</div>`;
+    card.appendChild(map);
+  }
+
+  // actions
+  const act=document.createElement('div'); act.className='card-act';
+  if(f.error){
+    act.innerHTML=`<span class="result-note" style="color:#C0392B">${escapeHtml(f.error)}</span>
+      <span class="grow"></span>
+      <button class="btn ghost" onclick="removeItem(${f.id})">Remove</button>`;
+  } else if(f.done){
+    const saved=f.size-f.newSize;
+    act.innerHTML=`<span class="result-note">Removed <b>${f.removedLabel}</b> · ${fmtBytes(f.size)} → ${fmtBytes(f.newSize)}${saved>0?` (−${fmtBytes(saved)})`:''}</span>
+      <span class="grow"></span>
+      <button class="btn primary" onclick="download(${f.id})">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        Download clean image
+      </button>`;
+  } else {
+    const rm=willRemove(f);
+    const label = f.unsupported
+      ? `Unsupported format — will re-encode to strip all metadata`
+      : rm.length ? `Will remove: ${[...new Set(rm.map(d=>KLAB[d.kind]))].join(', ')}`
+      : `No removable metadata detected`;
+    act.innerHTML=`<span class="result-note">${label}</span>
+      <span class="grow"></span>
+      <button class="btn ghost" onclick="removeItem(${f.id})">Remove</button>
+      <button class="btn primary" onclick="strip(${f.id})" ${(!rm.length && !f.unsupported)?'disabled':''}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        Strip metadata
+      </button>`;
+  }
+  card.appendChild(act);
+  return card;
+}
+
+// ---- strip action ----
+async function strip(id){
+  const f=state.find(x=>x.id===id); if(!f||f.done) return;
+  const opts={exif:optExif.checked, xmp:optXmp.checked};
+  try{
+    let out, removedKinds;
+    if(f.unsupported){
+      const blob=await reencode(f.file, f.mime);
+      out=new Uint8Array(await blob.arrayBuffer());
+      f.mime = f.mime==='image/webp'?'image/webp':'image/png';
+      removedKinds=['all metadata'];
+      if(f.mime==='image/png') f.name=swapExt(f.name,'png');
+    } else {
+      const res=analyze(f.bytes, f.fmt, opts, false);
+      out=res.out;
+      removedKinds=[...new Set(res.removed.map(d=>KLAB[d.kind]))];
+      if(!removedKinds.length) removedKinds=['nothing'];
+    }
+    // animate removal on the byte map, then commit
+    const card=listEl.querySelector(`[data-id="${id}"]`);
+    if(card){
+      const kills = f.unsupported ? ['c2pa','exif','xmp'] :
+        analyze(f.bytes,f.fmt,opts,false).removed.map(d=>d.kind);
+      card.querySelectorAll('.seg').forEach(seg=>{
+        if(kills.includes(seg.dataset.kind)) seg.classList.add('removing');
+      });
+    }
+    const commit=()=>{
+      f.done=true; f.cleaned=out; f.newSize=out.length;
+      f.removedLabel=removedKinds.join(', ');
+      render();
+    };
+    (window.matchMedia('(prefers-reduced-motion:reduce)').matches) ? commit() : setTimeout(commit,520);
+  }catch(err){
+    f.error=err.message; render();
+  }
+}
+
+function download(id){
+  const f=state.find(x=>x.id===id); if(!f||!f.cleaned) return;
+  const blob=new Blob([f.cleaned],{type:f.mime});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=addSuffix(f.name,'-clean');
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+
+function removeItem(id){ const i=state.findIndex(x=>x.id===id); if(i>-1) state.splice(i,1); render(); }
+
+// ---- small utils ----
+function addSuffix(name,suf){ const d=name.lastIndexOf('.'); return d<0?name+suf:name.slice(0,d)+suf+name.slice(d); }
+function swapExt(name,ext){ const d=name.lastIndexOf('.'); return (d<0?name:name.slice(0,d))+'.'+ext; }
+function escapeHtml(s){ return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// expose handlers used in inline onclick
+window.strip=strip; window.download=download; window.removeItem=removeItem;
+</script>
+</body>
+</html>
