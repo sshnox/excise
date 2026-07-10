@@ -37,7 +37,7 @@ For JPEG and PNG, excise walks the raw byte stream, identifies the marker segmen
 No build step. Just open the file:
 
 ```bash
-git clone https://github.com/your-username/excise.git
+git clone https://github.com/sshnox/excise.git
 cd excise
 open index.html      # or double-click it
 ```
